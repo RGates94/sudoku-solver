@@ -1,7 +1,5 @@
 #![allow(clippy::clone_on_copy, clippy::needless_range_loop)]
 
-use itertools::Itertools;
-
 trait MyItertools: Iterator + Sized {
 	/// This function will yield the iterator's next item, but only if that item is the only item
 	fn into_single(mut self) -> Option<Self::Item> {
@@ -15,9 +13,86 @@ trait MyItertools: Iterator + Sized {
 }
 impl<I: Iterator> MyItertools for I {}
 
+fn offset_pos(x: usize, y: usize, offset_x: isize, offset_y: isize) -> Option<(usize, usize)> {
+	Some((offset(x, offset_x)?, offset(y, offset_y)?))
+}
+
+fn offset(number: usize, offset: isize) -> Option<usize> {
+	let new_number = number as isize + offset;
+	if new_number >= 0 && new_number < 9 {
+		Some(new_number as usize)
+	} else {
+		None
+	}
+}
+
+/// Converts coordinates into human readable form: (0, 0) => A1, (2, 4) => C5
+fn cell_name(x: usize, y: usize) -> impl std::fmt::Display {
+	struct CellName { x: usize, y: usize };
+	impl std::fmt::Display for CellName {
+		fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+			write!(f, "{}{}",
+				std::char::from_u32(b'A' as u32 + self.x as u32).unwrap(),
+				std::char::from_u32(b'1' as u32 + self.y as u32).unwrap(),
+			)
+		}
+	}
+	CellName { x, y }
+}
+
+/// Stores all the possible numbers for this cell
+#[derive(Debug, Clone)]
+struct CellState {
+	possibilities: u16,
+}
+
+impl Default for CellState {
+	fn default() -> Self {
+		Self::completely_uncertain()
+	}
+}
+
+impl CellState {
+	fn completely_uncertain() -> Self {
+		Self { possibilities: 0b111111111 }
+	}
+	
+	fn certain(number: usize) -> Self {
+		Self { possibilities: 1 << number }
+	}
+
+	/// Returns false if the given number was already eliminated
+	fn eliminate(&mut self, number: usize) -> bool {
+		let prev = self.possibilities;
+		self.possibilities &= !(1 << number);
+		self.possibilities != prev
+	}
+
+	fn could_contain(&self, number: usize) -> bool {
+		self.possibilities & (1 << number) > 0
+	}
+
+	fn is_certain(&self) -> bool {
+		self.possibilities.count_ones() == 1
+	}
+
+	fn is_impossible(&self) -> bool {
+		self.possibilities.count_ones() == 0
+	}
+
+	/// If this cell is certain, return the number of the cell
+	fn get_certain(&self) -> Option<usize> {
+		if self.is_certain() {
+			Some(self.possibilities.trailing_zeros() as usize)
+		} else {
+			None
+		}
+	}
+}
+
 struct UniqueRegion {
-	name: &'static str,
-	cells: [(usize, usize); 9],
+	pub name: &'static str,
+	pub cells: [(usize, usize); 9],
 }
 
 #[derive(Default, Clone)]
@@ -147,26 +222,6 @@ impl SudokuState {
 	}
 }
 
-fn offset_pos(x: usize, y: usize, offset_x: isize, offset_y: isize) -> Option<(usize, usize)> {
-	Some((offset(x, offset_x)?, offset(y, offset_y)?))
-}
-
-fn offset(number: usize, offset: isize) -> Option<usize> {
-	let new_number = number as isize + offset;
-	if new_number >= 0 && new_number < 9 {
-		Some(new_number as usize)
-	} else {
-		None
-	}
-}
-
-fn cell_name(x: usize, y: usize) -> String {
-	format!("{}{}",
-		std::char::from_u32(b'A' as u32 + x as u32).unwrap(),
-		std::char::from_u32(b'1' as u32 + y as u32).unwrap(),
-	)
-}
-
 impl std::fmt::Debug for SudokuState {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		writeln!(f, "     A     B     C     D     E     F     G     H     I   ")?;
@@ -211,66 +266,19 @@ impl std::fmt::Debug for SudokuState {
 	}
 }
 
-#[derive(Clone, Copy, Debug)]
-struct Number(usize);
-
-#[derive(Debug, Clone)]
-struct CellState {
-	possibilities: u16,
-}
-
-impl Default for CellState {
-	fn default() -> Self {
-		Self::completely_uncertain()
-	}
-}
-
-impl CellState {
-	fn completely_uncertain() -> Self {
-		Self { possibilities: 0b111111111 }
-	}
-	
-	fn certain(number: usize) -> Self {
-		Self { possibilities: 1 << number }
-	}
-
-	/// Returns false if the given number was already eliminated
-	fn eliminate(&mut self, number: usize) -> bool {
-		let prev = self.possibilities;
-		self.possibilities &= !(1 << number);
-		self.possibilities != prev
-	}
-
-	fn could_contain(&self, number: usize) -> bool {
-		self.possibilities & (1 << number) > 0
-	}
-
-	fn is_certain(&self) -> bool {
-		self.possibilities.count_ones() == 1
-	}
-
-	fn is_impossible(&self) -> bool {
-		self.possibilities.count_ones() == 0
-	}
-
-	/// If this cell is certain, return the number of the cell
-	fn get_certain(&self) -> Option<usize> {
-		if self.is_certain() {
-			Some(self.possibilities.trailing_zeros() as usize)
-		} else {
-			None
-		}
-	}
-}
-
-fn try_smth(
+fn try_out_field_state(
 	field: SudokuState,
-	output: &mut Vec<SudokuState>,
+	handle_solution: &mut dyn FnMut(SudokuState),
 	depth: u32
 ) {
-	let explain = depth >= 51;
+	// let explain = depth >= 51;
+	let explain = true;
 
-	fn applicable_cells<'a>(field: &'a SudokuState, region: &'a UniqueRegion, number: usize) -> impl Iterator<Item = (usize, usize)> + 'a {
+	fn applicable_cells<'a>(
+		field: &'a SudokuState,
+		region: &'a UniqueRegion,
+		number: usize
+	) -> impl Iterator<Item = (usize, usize)> + 'a {
 		region.cells.iter().cloned().filter(move |&(cell_x, cell_y)| {
 			field.cells[cell_x][cell_y].could_contain(number)
 				&& !field.cells[cell_x][cell_y].is_certain()
@@ -295,31 +303,44 @@ fn try_smth(
 		let mut field = field.clone();
 		field.set_certain(cell_x, cell_y, number, explain, "");
 		if field.is_impossible() {
-			// Setting this field causes a cell to have no valid possible value anymore. This
-			// permutation will not lead us to the correct solution
+			// Setting this field causes a cell to have no valid possible value anymore, so this
+			// permutation is a dead end
 			return;
 		}
 
-		try_smth(field, output, depth + 1);
+		try_out_field_state(field, handle_solution, depth + 1);
 	};
 
-	if let Some((_, region, number)) = low_hanging_region {
+	if let Some((num_applicable_cells, region, number)) = low_hanging_region {
 		if explain {
 			println!("{:?}", field);
-			println!(
-				"Only {0} can contain the {1} in {2} => {0} must be {1}",
-				applicable_cells(&field, region, number).map(|(x, y)| cell_name(x, y)).join(", "),
-				number + 1,
-				region.name,
-			);
+			if num_applicable_cells == 1 {
+				// UNWRAP: num_applicable_cells is one, so this iterator can only have one element
+				let (cell_x, cell_y) = applicable_cells(&field, region, number).into_single().unwrap();
+				println!(
+					"Only {0} can contain the {1} in {2} => {0} must be {1}",
+					cell_name(cell_x, cell_y),
+					number + 1,
+					region.name,
+				);
+			} else {
+				println!("Multiple cells could contains the {} in {}", number + 1, region.name);
+			}
 		}
 
 		for (cell_x, cell_y) in applicable_cells(&field, region, number) {
+			if explain && num_applicable_cells > 1 {
+				println!(
+					"Assuming that {} houses the {} in {}",
+					cell_name(cell_x, cell_y), number, region.name
+				);
+			}
+
 			try_with_cell_set_to(cell_x, cell_y, number);
 		}
 	} else {
 		// If no region+number with applicable cells were found, it means the cells are all certain
-		output.push(field);
+		handle_solution(field);
 	}
 }
 
@@ -328,11 +349,6 @@ fn main() {
 	field.set_certain(2, 4, 0, false, "");
 	field.set_certain(6, 5, 1, false, "");
 
-	let mut solutions = Vec::new();
-	try_smth(field, &mut solutions, 0);
-
-	println!("Got {} solutions:", solutions.len());
-	for solution in solutions {
-		println!("{:?}", solution);
-	}
+	println!("Calculating solutions:");
+	try_out_field_state(field, &mut |f| println!("{:?}", f), 0);
 }
