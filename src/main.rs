@@ -1,5 +1,12 @@
 #![allow(clippy::clone_on_copy, clippy::needless_range_loop)]
 
+use clap::Clap;
+
+#[derive(Clap)]
+struct SolvePuzzleRaw {
+	puzzle: String,
+}
+
 trait MyItertools: Iterator + Sized {
 	/// This function will yield the iterator's next item, but only if that item is the only item
 	fn into_single(mut self) -> Option<Self::Item> {
@@ -345,9 +352,15 @@ fn try_out_field_state(
 }
 
 fn main() {
+	let raw: SolvePuzzleRaw = SolvePuzzleRaw::parse();
 	let mut field = SudokuState::default();
-	field.set_certain(2, 4, 0, false, "");
-	field.set_certain(6, 5, 1, false, "");
+	for (idx, value) in raw.puzzle.chars().enumerate() {
+		if let Some(num) = value.to_digit(10) {
+			if num > 0 {
+				field.set_certain(idx % 9, idx / 9, (num - 1) as usize, false, "")
+			}
+		}
+	}
 
 	println!("Calculating solutions:");
 	try_out_field_state(field, &mut |f| println!("{:?}", f), 0);
