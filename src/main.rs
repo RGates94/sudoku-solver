@@ -362,6 +362,12 @@ fn main() {
 		}
 	}
 
+	let mut solutions = vec![];
+
 	println!("Calculating solutions:");
-	try_out_field_state(field, &mut |f| println!("{:?}", f), 0);
+	try_out_field_state(field, &mut |f| { println!("{:?}", f); solutions.push(f)}, 0);
+	for solution in solutions {
+		println!("A solution is:");
+		println!("{:?}", solution);
+	}
 }
