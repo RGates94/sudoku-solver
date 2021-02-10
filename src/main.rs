@@ -5,6 +5,8 @@ use clap::Clap;
 #[derive(Clap)]
 struct SolvePuzzleRaw {
 	puzzle: String,
+	#[clap(long, short)]
+	explain: bool,
 }
 
 trait MyItertools: Iterator + Sized {
@@ -276,10 +278,9 @@ impl std::fmt::Debug for SudokuState {
 fn try_out_field_state(
 	field: SudokuState,
 	handle_solution: &mut dyn FnMut(SudokuState),
-	depth: u32
+	depth: u32,
+	explain: bool,
 ) {
-	// let explain = depth >= 51;
-	let explain = true;
 
 	fn applicable_cells<'a>(
 		field: &'a SudokuState,
@@ -315,7 +316,7 @@ fn try_out_field_state(
 			return;
 		}
 
-		try_out_field_state(field, handle_solution, depth + 1);
+		try_out_field_state(field, handle_solution, depth + 1, explain);
 	};
 
 	if let Some((num_applicable_cells, region, number)) = low_hanging_region {
@@ -365,7 +366,7 @@ fn main() {
 	let mut solutions = vec![];
 
 	println!("Calculating solutions:");
-	try_out_field_state(field, &mut |f| { println!("{:?}", f); solutions.push(f)}, 0);
+	try_out_field_state(field, &mut |f| {solutions.push(f)}, 0, raw.explain);
 	for solution in solutions {
 		println!("A solution is:");
 		println!("{:?}", solution);
