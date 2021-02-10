@@ -501,7 +501,7 @@ fn try_out_field_state(
                 );
             } else {
                 println!(
-                    "Multiple cells could contains the {} in {}",
+                    "Multiple cells could contain the {} in {}",
                     number + 1,
                     region.name
                 );
@@ -513,7 +513,7 @@ fn try_out_field_state(
                 println!(
                     "Assuming that {} houses the {} in {}",
                     cell_name(cell_x, cell_y),
-                    number,
+                    number + 1,
                     region.name
                 );
             }
