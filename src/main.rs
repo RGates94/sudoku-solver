@@ -11,16 +11,20 @@ struct SolvePuzzleRaw {
     anti_king: bool,
     #[clap(long)]
     anti_knight: bool,
+    #[clap(long)]
+    non_con: bool,
 }
 
 struct PuzzleConfig {
     anti_cells: Vec<(isize,isize)>,
+    non_con_cells: Vec<(isize, isize)>,
 }
 
 impl PuzzleConfig {
-    fn new(anti_cells: Vec<(isize,isize)>) -> Self {
+    fn new(anti_cells: Vec<(isize,isize)>, non_con_cells: Vec<(isize,isize)>) -> Self {
         Self {
             anti_cells,
+            non_con_cells,
         }
     }
 }
@@ -286,7 +290,7 @@ impl SudokuState {
         }
 
         // eliminate neighboring numbers in directly neighboring cells
-        for &(offset_x, offset_y) in &[(0, 1), (1, 0), (0, -1), (-1, 0)] {
+        for &(offset_x, offset_y) in &config.non_con_cells {
             if let Some((x, y)) = offset_pos(certain_x, certain_y, offset_x, offset_y) {
                 if let Some(number_increment) = offset(number, 1) {
                     eliminate(x, y, number_increment, "direct neighbor");
@@ -528,7 +532,10 @@ fn try_out_field_state(
 fn main() {
     let raw: SolvePuzzleRaw = SolvePuzzleRaw::parse();
     let mut field = SudokuState::default();
-    let mut config = PuzzleConfig::new(vec![]);
+    let mut config = PuzzleConfig::new(vec![], vec![]);
+    if raw.non_con {
+        config.non_con_cells = vec![(0, 1), (1, 0), (0, -1), (-1, 0)];
+    }
     if raw.anti_king {
         config.anti_cells.append(&mut vec![
             // 8 neighboring cells
