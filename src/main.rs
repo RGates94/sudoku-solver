@@ -7,6 +7,22 @@ struct SolvePuzzleRaw {
     puzzle: String,
     #[clap(long, short)]
     explain: bool,
+    #[clap(long)]
+    anti_king: bool,
+    #[clap(long)]
+    anti_knight: bool,
+}
+
+struct PuzzleConfig {
+    anti_cells: Vec<(isize,isize)>,
+}
+
+impl PuzzleConfig {
+    fn new(anti_cells: Vec<(isize,isize)>) -> Self {
+        Self {
+            anti_cells,
+        }
+    }
 }
 
 trait MyItertools: Iterator + Sized {
@@ -208,6 +224,7 @@ impl SudokuState {
         number: usize,
         explain: bool,
         indent: &str,
+        config: &PuzzleConfig,
     ) {
         let mut indent = indent.to_owned();
         indent += "  ";
@@ -239,7 +256,7 @@ impl SudokuState {
                         );
                     }
 
-                    self.set_certain(x, y, new_certain_number_by_elimination, explain, &indent);
+                    self.set_certain(x, y, new_certain_number_by_elimination, explain, &indent, config);
                 }
             }
         };
@@ -262,26 +279,7 @@ impl SudokuState {
         }
 
         // eliminate surrounding 16 cells
-        for &(offset_x, offset_y) in &[
-            // 8 neighboring cells
-            (-1, 1),
-            (0, 1),
-            (1, 1),
-            (1, 0),
-            (1, -1),
-            (0, -1),
-            (-1, -1),
-            (-1, 0),
-            // 8 cells reachable by chess knight move
-            (-1, 2),
-            (1, 2),
-            (2, 1),
-            (2, -1),
-            (1, -2),
-            (-1, -2),
-            (-2, -1),
-            (-2, 1),
-        ] {
+        for &(offset_x, offset_y) in &config.anti_cells {
             if let Some((x, y)) = offset_pos(certain_x, certain_y, offset_x, offset_y) {
                 eliminate(x, y, number, "near cell");
             }
@@ -441,6 +439,7 @@ fn try_out_field_state(
     handle_solution: &mut dyn FnMut(SudokuState),
     depth: u32,
     explain: bool,
+    config: &PuzzleConfig,
 ) {
     fn applicable_cells<'a>(
         field: &'a SudokuState,
@@ -475,14 +474,14 @@ fn try_out_field_state(
 
     let mut try_with_cell_set_to = |cell_x, cell_y, number| {
         let mut field = field.clone();
-        field.set_certain(cell_x, cell_y, number, explain, "");
+        field.set_certain(cell_x, cell_y, number, explain, "", config);
         if field.is_impossible() {
             // Setting this field causes a cell to have no valid possible value anymore, so this
             // permutation is a dead end
             return;
         }
 
-        try_out_field_state(field, handle_solution, depth + 1, explain);
+        try_out_field_state(field, handle_solution, depth + 1, explain, config);
     };
 
     if let Some((num_applicable_cells, region, number)) = low_hanging_region {
@@ -529,10 +528,34 @@ fn try_out_field_state(
 fn main() {
     let raw: SolvePuzzleRaw = SolvePuzzleRaw::parse();
     let mut field = SudokuState::default();
+    let mut config = PuzzleConfig::new(vec![]);
+    if raw.anti_king {
+        config.anti_cells.append(&mut vec![
+            // 8 neighboring cells
+            (-1, 1),
+            (0, 1),
+            (1, 1),
+            (1, 0),
+            (1, -1),
+            (0, -1),
+            (-1, -1),
+            (-1, 0),])
+    }
+    if raw.anti_knight {
+        config.anti_cells.append(&mut vec![
+            (-1, 2),
+            (1, 2),
+            (2, 1),
+            (2, -1),
+            (1, -2),
+            (-1, -2),
+            (-2, -1),
+            (-2, 1),])
+    }
     for (idx, value) in raw.puzzle.chars().enumerate() {
         if let Some(num) = value.to_digit(10) {
             if num > 0 {
-                field.set_certain(idx % 9, idx / 9, (num - 1) as usize, false, "")
+                field.set_certain(idx % 9, idx / 9, (num - 1) as usize, false, "", &config)
             }
         }
     }
@@ -540,9 +563,10 @@ fn main() {
     let mut solutions = vec![];
 
     println!("Calculating solutions:");
-    try_out_field_state(field, &mut |f| solutions.push(f), 0, raw.explain);
-    for solution in solutions {
+    try_out_field_state(field, &mut |f| solutions.push(f), 0, raw.explain, &config);
+    for solution in &solutions {
         println!("A solution is:");
         println!("{:?}", solution);
     }
+    println!("There are {} solutions", solutions.len());
 }
